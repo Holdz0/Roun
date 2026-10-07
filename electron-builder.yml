@@ -1,0 +1,16 @@
+appId: com.tahaefe.roun
+productName: Roun
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - node_modules/@lydell/**
+win:
+  target: nsis
+  artifactName: Roun-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
