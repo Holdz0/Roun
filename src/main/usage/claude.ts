@@ -1,10 +1,10 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { newestJsonl, tailLines } from './jsonl'
 import type { ContextResult, LimitsResult, LimitWindow } from './types'
 
-const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+export const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
 
 const LABELS: Record<string, string> = {
   five_hour: '5 saat',
@@ -76,10 +76,11 @@ export function projectDirFor(cwd: string): string {
 }
 
 /** Sekmenin cwd'sine ait, sekme açıldıktan sonra yazılan en güncel oturumun bağlam doluluğu. */
-export function claudeContext(cwd: string, since: number, resume: boolean): ContextResult {
+export function claudeContext(cwd: string, since: number, resume: boolean, sessionId?: string): ContextResult {
   const empty: ContextResult = { ok: false, used: 0, window: 200_000, percent: 0 }
   // Yeni oturumlar sekmeden sonra oluşturulan dosyaya, devam edilenler sonradan yazılan dosyaya yazar
-  const newest = newestJsonl(projectDirFor(cwd), resume ? { since: since - 2000 } : { createdSince: since - 2000 })
+  const explicit = sessionId ? join(projectDirFor(cwd), sessionId + '.jsonl') : null
+  const newest = explicit ? (existsSync(explicit) ? { file: explicit, mtime: statSync(explicit).mtimeMs } : null) : newestJsonl(projectDirFor(cwd), resume ? { since: since - 2000 } : { createdSince: since - 2000 })
   if (!newest) return empty
   try {
     for (const line of tailLines(newest.file)) {

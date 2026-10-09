@@ -1,7 +1,7 @@
 {
   "name": "roun",
   "productName": "Roun",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Claude Code + Codex CLI masaüstü terminali ve kullanım paneli",
   "main": "out/main/index.js",
   "author": "tahaefe",
@@ -11,7 +11,9 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build:win": "electron-vite build && electron-builder --win"
+    "build:win": "electron-vite build && electron-builder --win",
+    "test:features": "node --test tests/features.test.mjs",
+    "preview:ui": "node tests/ui-preview.mjs"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.15",

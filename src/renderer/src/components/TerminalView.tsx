@@ -6,7 +6,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import { RotateCw, Search, X } from 'lucide-react'
-import type { Settings, Tab } from '../types'
+import { isClaudeLike, type Settings, type Tab, type TabState } from '../types'
 
 const DARK: ITheme = {
   background: '#16161a',
@@ -35,16 +35,25 @@ const LIGHT: ITheme = {
 interface Props {
   tab: Tab
   active: boolean
+  focused: boolean
   settings: Settings
   onExit: (id: string, code: number) => void
   onRestart: (id: string) => void
   onClose: (id: string) => void
+  onState: (id: string, state: TabState, confirmed?: boolean) => void
 }
+
+// Codex hook'ları dışarıdan eklenemediği için durum ekrandan okunur
+const CODEX_WORKING = /esc to interrupt/i
+const CODEX_APPROVAL = /would you like to (run|make|grant|allow)|press enter to confirm|esc to cancel/i
+const CODEX_ERROR = /^\s*■ /m
+/** Claude'da Esc ile kesilen turda Stop hook'u gelmez; bu kadar sessizlik "bitti" sayılır */
+const CLAUDE_SILENCE_MS = 8000
 
 /** Yollarda boşluk varsa tırnak içine alır. */
 const quotePath = (p: string): string => (/\s/.test(p) ? `"${p}"` : p)
 
-export default function TerminalView({ tab, active, settings, onExit, onRestart, onClose }: Props) {
+export default function TerminalView({ tab, active, focused, settings, onExit, onRestart, onClose, onState }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal | null>(null)
   const fit = useRef<FitAddon | null>(null)
@@ -53,6 +62,8 @@ export default function TerminalView({ tab, active, settings, onExit, onRestart,
   const [query, setQuery] = useState('')
   const [dragging, setDragging] = useState(false)
   const searchInput = useRef<HTMLInputElement>(null)
+  const stateRef = useRef(tab.state)
+  stateRef.current = tab.state
 
   // Terminal örneğini bir kez oluştur
   useEffect(() => {
@@ -135,8 +146,52 @@ export default function TerminalView({ tab, active, settings, onExit, onRestart,
     fit.current = f
     search.current = s
 
+    // Ekranın alt kısmındaki dolu satırlar (Codex durum çubuğu ve onay penceresi burada)
+    const bottomText = (): string => {
+      const b = t.buffer.active
+      const lines: string[] = []
+      for (let i = b.viewportY; i < b.viewportY + t.rows; i++) lines.push(b.getLine(i)?.translateToString(true) ?? '')
+      return lines.filter((l) => l.trim()).slice(-15).join('\n')
+    }
+    let lastOutput = 0
+    let lastWorking = 0
+    const scanCodex = (): void => {
+      const text = bottomText()
+      const cur = stateRef.current
+      let next: TabState | null = null
+      if (CODEX_APPROVAL.test(text)) next = 'waiting'
+      else if (CODEX_WORKING.test(text)) {
+        lastWorking = Date.now()
+        next = 'working'
+      } else if ((cur === 'working' || cur === 'waiting') && Date.now() - lastWorking > 1500) {
+        next = CODEX_ERROR.test(text) ? 'error' : 'done'
+      }
+      if (next && next !== cur) {
+        stateRef.current = next
+        onState(tab.id, next)
+      }
+    }
+    let scanTimer: number | null = null
+    const tick = window.setInterval(() => {
+      if (tab.tool === 'codex') scanCodex()
+      else if (isClaudeLike(tab.tool) && stateRef.current === 'working' && Date.now() - lastOutput > CLAUDE_SILENCE_MS) {
+        stateRef.current = 'done'
+        onState(tab.id, 'done', false)
+      }
+    }, 1000)
+
     const offData = window.roun.pty.onData((id, data) => {
-      if (id === tab.id) t.write(data)
+      if (id !== tab.id) return
+      lastOutput = Date.now()
+      if (tab.tool === 'codex' && scanTimer === null) {
+        // Yazma tamamlandıktan sonra ekranı oku
+        t.write(data, () => {
+          scanTimer = window.setTimeout(() => {
+            scanTimer = null
+            scanCodex()
+          }, 250)
+        })
+      } else t.write(data)
     })
     const offExit = window.roun.pty.onExit((id, code) => {
       if (id === tab.id) onExit(id, code)
@@ -154,6 +209,8 @@ export default function TerminalView({ tab, active, settings, onExit, onRestart,
     ro.observe(host.current!)
 
     return () => {
+      window.clearInterval(tick)
+      if (scanTimer !== null) window.clearTimeout(scanTimer)
       ro.disconnect()
       offData()
       offExit()
@@ -200,9 +257,9 @@ export default function TerminalView({ tab, active, settings, onExit, onRestart,
       } catch {
         /* yok say */
       }
-      term.current?.focus()
+      if (focused) term.current?.focus()
     })
-  }, [active])
+  }, [active, focused])
 
   const runSearch = (dir: 'next' | 'prev'): void => {
     if (!query) return
@@ -215,6 +272,8 @@ export default function TerminalView({ tab, active, settings, onExit, onRestart,
     <div
       className={`term-wrap ${active ? '' : 'hidden'} ${dragging ? 'dragging' : ''}`}
       onDragOver={(e) => {
+        // Yalnızca dosya sürüklemelerini kabul et (sekme sürüklemeleri değil)
+        if (!e.dataTransfer.types.includes('Files')) return
         e.preventDefault()
         setDragging(true)
       }}

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { newestJsonl, tailLines } from './jsonl'
+import { join, resolve } from 'node:path'
+import { newestJsonl, tailLines, headLines } from './jsonl'
 import type { ContextResult, LimitsResult, LimitWindow } from './types'
 
 const CODEX_DIR = process.env.CODEX_HOME || join(homedir(), '.codex')
@@ -87,7 +87,7 @@ function fromLogs(now: number): LimitsResult | null {
           })
         }
       }
-      if (windows.length) return { ok: true, windows, source: 'log', fetchedAt: now }
+      if (windows.length) return { ok: true, windows, source: 'log', fetchedAt: now, measuredAt: Number.isFinite(base) ? base : newest.mtime }
     } catch {
       /* sonraki satır */
     }
@@ -109,10 +109,25 @@ export async function codexLimits(): Promise<LimitsResult> {
   )
 }
 
-/** Sekme açıldıktan sonra yazılan en yeni Codex oturumunun bağlam doluluğu. */
-export function codexContext(since: number, resume: boolean): ContextResult {
+export function codexSessionCwd(file: string): string | null {
+  try {
+    for (const line of headLines(file)) {
+      try { const j = JSON.parse(line); if (j.type === 'session_meta') return j.payload?.cwd || null } catch {}
+    }
+  } catch {}
+  return null
+}
+export function sameCwd(a: string, b: string): boolean {
+  return process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b)
+}
+
+/** Projeye ve bilinen oturum kimliğine ait bağlam doluluğu. */
+export function codexContext(cwd: string, since: number, resume: boolean, sessionId?: string): ContextResult {
   const empty: ContextResult = { ok: false, used: 0, window: 0, percent: 0 }
-  const newest = newestJsonl(SESSIONS, { recursive: true, prefix: 'rollout-', ...(resume ? { since: since - 2000 } : { createdSince: since - 2000 }) })
+  const newest = newestJsonl(SESSIONS, { recursive: true, prefix: 'rollout-',
+    ...(sessionId ? {} : resume ? { since: since - 2000 } : { createdSince: since - 2000 }),
+    acceptFile: (file) => sessionId ? file.endsWith(sessionId + '.jsonl') : sameCwd(codexSessionCwd(file) || '', cwd)
+  })
   if (!newest) return empty
   for (const line of tailLines(newest.file)) {
     if (!line.includes('token_count')) continue

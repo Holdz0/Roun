@@ -23,9 +23,10 @@ const api = {
     }
   },
   usage: {
+    history: () => ipcRenderer.invoke('usage:history'),
     limits: (force?: boolean) => ipcRenderer.invoke('usage:limits', force),
-    context: (tool: string, cwd: string, since: number, args: string) =>
-      ipcRenderer.invoke('usage:context', tool, cwd, since, args),
+    context: (tool: string, cwd: string, since: number, args: string, tabId?: string) =>
+      ipcRenderer.invoke('usage:context', tool, cwd, since, args, tabId),
     onLimits: (cb: (l: unknown) => void) => {
       const h = (_: unknown, l: unknown): void => cb(l)
       ipcRenderer.on('usage:limits', h)
@@ -34,14 +35,46 @@ const api = {
       }
     }
   },
+  worktrees: {
+    list: (cwd: string) => ipcRenderer.invoke('worktrees:list', cwd),
+    create: (cwd: string, branch: string) => ipcRenderer.invoke('worktrees:create', cwd, branch)
+  },
+  sessions: {
+    list: () => ipcRenderer.invoke('sessions:list'),
+    draft: (key: string): Promise<string> => ipcRenderer.invoke('sessions:draft', key),
+    detail: (key: string) => ipcRenderer.invoke('sessions:detail', key),
+    update: (key: string, patch: { title?: string; pinned?: boolean }) => ipcRenderer.invoke('sessions:update', key, patch),
+    handoff: (tabId: string): Promise<string> => ipcRenderer.invoke('sessions:handoff', tabId)
+  },
+  notifications: {
+    state: (id: string, state: string) => ipcRenderer.send('notification:state', id, state),
+    onActivate: (cb: (id: string | null) => void) => {
+      const h = (_: unknown, id: string | null): void => cb(id)
+      ipcRenderer.on('notification:activate', h)
+      return (): void => { ipcRenderer.removeListener('notification:activate', h) }
+    },
+    onError: (cb: (message: string) => void) => {
+      const h = (_: unknown, message: string): void => cb(message)
+      ipcRenderer.on('notification:error', h)
+      return (): void => { ipcRenderer.removeListener('notification:error', h) }
+    }
+  },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch: Record<string, unknown>) => ipcRenderer.invoke('settings:set', patch)
   },
   tabs: {
+    session: (id: string): Promise<string | null> => ipcRenderer.invoke('tabs:session', id),
     load: () => ipcRenderer.invoke('tabs:load'),
     save: (tabs: { id: string; tool: string; cwd: string; args: string; startedAt: number }[], activeId: string | null) =>
-      ipcRenderer.send('tabs:save', tabs, activeId)
+      ipcRenderer.send('tabs:save', tabs, activeId),
+    onState: (cb: (id: string, state: string) => void) => {
+      const h = (_: unknown, id: string, state: string): void => cb(id, state)
+      ipcRenderer.on('tab:state', h)
+      return (): void => {
+        ipcRenderer.removeListener('tab:state', h)
+      }
+    }
   },
   pickFolder: (current?: string): Promise<string | null> => ipcRenderer.invoke('dialog:folder', current),
   openExternal: (url: string) => ipcRenderer.send('shell:open', url),

@@ -9,13 +9,15 @@ export interface SpawnOptions {
   args: string
   cols: number
   rows: number
+  /** OpenRouter sekmesinde Claude'dan önce çalışan PowerShell komutları */
+  startup?: string
 }
 
 const ptys = new Map<string, pty.IPty>()
 
 export function spawnPty(wc: WebContents, o: SpawnOptions): void {
-  const { file, args } = commandFor(o.tool, o.args)
-  const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', FORCE_COLOR: '3' } as Record<string, string>
+  const { file, args } = commandFor(o.tool, o.args, o.startup)
+  const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', FORCE_COLOR: '3', ROUN_TAB: o.id } as Record<string, string>
   // Uygulama başka bir Claude Code oturumunun içinden açıldıysa o oturuma ait işaretler sızmasın
   for (const k of Object.keys(env)) {
     if (k === 'CLAUDECODE' || k === 'CLAUDE_PID' || k === 'CLAUDE_EFFORT' || /^CLAUDE_CODE_(CHILD_SESSION|SESSION_|ENTRYPOINT|EXECPATH|MESSAGING_|SSE_PORT)/.test(k)) {

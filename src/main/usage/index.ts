@@ -18,9 +18,10 @@ export async function getLimits(maxAgeMs: number, force = false): Promise<{ clau
   return inflight
 }
 
-export function getContext(tool: string, cwd: string, since: number, args = ''): ContextResult | null {
+export function getContext(tool: string, cwd: string, since: number, args = '', sessionId?: string): ContextResult | null {
+  sessionId ||= args.match(/(?:--session-id|--resume|-r|resume)\s+["']?([0-9a-f-]{36})/i)?.[1]
   const resume = /(^|\s)(-c|--continue|-r|--resume|resume)(\s|$)/.test(args)
-  if (tool === 'claude') return claudeContext(cwd, since, resume)
-  if (tool === 'codex') return codexContext(since, resume)
+  if (tool === 'claude' || tool === 'openrouter') return claudeContext(cwd, since, resume, sessionId)
+  if (tool === 'codex') return codexContext(cwd, since, resume, sessionId)
   return null
 }

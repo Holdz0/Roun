@@ -11,6 +11,7 @@ export interface LimitsResult {
   source: 'api' | 'log' | 'none'
   error?: string
   fetchedAt: number
+  measuredAt?: number
 }
 
 export interface ContextResult {
